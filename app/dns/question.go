@@ -9,9 +9,10 @@ import (
 
 // Question represents a DNS question section
 type Question struct {
-	Name  *NameAddr         // Domain name
-	Type  _type.RecordType  // Query type
-	Class _type.RecordClass // Query class
+	Name     *NameAddr
+	Type     _type.RecordType
+	Class    _type.RecordClass
+	calcSize int
 }
 
 func parseSingleQuestion(origBuf []byte, startBuf []byte) (*Question, []byte, error) {
@@ -166,7 +167,10 @@ func parseQuestions(buf []byte, count uint16) ([]*Question, error) {
 
 // Size in byte
 func (q *Question) Size() int {
-	return 4 + q.Name.Size()
+	if q.calcSize == 0 {
+		q.calcSize = 4 + q.Name.Size()
+	}
+	return q.calcSize
 }
 
 // WriteTo a byte buffer with content of a DNS Message

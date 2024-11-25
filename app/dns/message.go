@@ -4,22 +4,26 @@ import (
 	"errors"
 )
 
+// Message represents a DNS message
 type Message struct {
 	Header    *Header
 	Questions []*Question
 	Answers   []*Answer
+	calcSize  int
 }
 
 // Size in byte
 func (m *Message) Size() int {
-	size := m.Header.Size()
-	for _, q := range m.Questions {
-		size += q.Size()
+	if m.calcSize == 0 {
+		m.calcSize = m.Header.Size()
+		for _, q := range m.Questions {
+			m.calcSize += q.Size()
+		}
+		for _, a := range m.Answers {
+			m.calcSize += a.Size()
+		}
 	}
-	for _, a := range m.Answers {
-		size += a.Size()
-	}
-	return size
+	return m.calcSize
 }
 
 // ParseMessage parses a complete DNS message

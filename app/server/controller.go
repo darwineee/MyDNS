@@ -5,46 +5,47 @@ import (
 	"com.sentry.dev/app/dns"
 	"fmt"
 	"net"
+	"sync"
 )
 
 // HandleRequest handle incoming request from client
 func (server *UDPServer) HandleRequest() (
-	clientAddr *net.UDPAddr,
-	header *dns.Header,
-	questions []*dns.Question,
+	request *Request,
 	err error,
 ) {
 	buf := make([]byte, config.PkgLimitRFC1035)
-	_, clientAddr, err = server.conn.ReadFromUDP(buf)
+	_, clientAddr, err := server.conn.ReadFromUDP(buf)
 	if err != nil {
 		fmt.Println(err)
-		return
+		return nil, err
 	}
-	header, questions, err = dns.ParseMessage(buf)
+	header, questions, err := dns.ParseMessage(buf)
 	if err != nil {
 		fmt.Println(err)
-		return
+		return nil, err
 	}
-	return
+	return &Request{
+		ClientAddr: clientAddr,
+		Header:     header,
+		Questions:  questions,
+	}, nil
 }
 
 // HandleResponse prepare response and send it to client
 func (server *UDPServer) HandleResponse(
-	clientAddr *net.UDPAddr,
-	header *dns.Header,
-	questions []*dns.Question,
+	req *Request,
 ) (err error) {
 	var answers []*dns.Answer
-	if header.RecursionDesired {
-		header.RecursionAvailable = true
-		answers, err = server.lookUp(questions)
+	if req.Header.RecursionDesired {
+		req.Header.RecursionAvailable = true
+		answers, err = server.lookUp(req.Questions)
 		if err != nil {
-			err = server.handleRecursiveResponse(clientAddr, header, *header, questions)
+			err = server.handleRecursiveResponse(req.ClientAddr, req.Header, *req.Header, req.Questions)
 		} else {
-			err = server.handleNormalResponse(clientAddr, header, questions, answers)
+			err = server.handleNormalResponse(req.ClientAddr, req.Header, req.Questions, answers)
 		}
 	} else {
-		err = server.handleNormalResponse(clientAddr, header, questions, answers)
+		err = server.handleNormalResponse(req.ClientAddr, req.Header, req.Questions, answers)
 	}
 
 	if err != nil {
@@ -70,19 +71,26 @@ func (server *UDPServer) handleRecursiveResponse(
 			return err
 		}
 	}
-
-	for _, question := range questions {
-		var query []byte
-		if query, err = buildQuery(reqHeader, question); err != nil {
-			return err
-		}
-		var response []byte
-		if response, err = server.forward(query); err != nil {
-			return err
-		}
-		//response contains answer
-		if len(response) > len(query) {
-			answer := response[len(query):]
+	var wg sync.WaitGroup
+	answers := make([][]byte, len(questions))
+	for i, question := range questions {
+		wg.Add(1)
+		go func(question *dns.Question, order int) {
+			defer wg.Done()
+			var query []byte
+			if query, err = buildQuery(reqHeader, question); err != nil {
+				return
+			}
+			var response []byte
+			if response, err = server.forward(query); err == nil && len(response) > len(query) {
+				answer := response[len(query):]
+				answers[order] = answer
+			}
+		}(question, i)
+	}
+	wg.Wait()
+	for _, answer := range answers {
+		if answer != nil {
 			copy(remaining, answer)
 			remaining = remaining[len(answer):]
 			ansCount++

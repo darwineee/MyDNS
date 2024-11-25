@@ -13,11 +13,15 @@ type Answer struct {
 	TTL      uint32
 	RDLength uint16
 	RData    *IPAddr
+	calcSize int
 }
 
 // Size in byte
 func (a *Answer) Size() int {
-	return 10 + a.Name.Size() + a.RData.Size()
+	if a.calcSize == 0 {
+		a.calcSize = 10 + a.Name.Size() + a.RData.Size()
+	}
+	return a.calcSize
 }
 
 // WriteTo a byte buffer with content of a DNS Message

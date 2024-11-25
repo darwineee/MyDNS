@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -15,9 +16,13 @@ const (
 )
 
 type UDPServer struct {
-	conn          *net.UDPConn
-	Running       bool
 	RecursiveHost *string
+	Workers       chan struct{}
+
+	conn       *net.UDPConn
+	eventQueue chan *Request
+	shutdown   chan struct{}
+	wg         sync.WaitGroup
 }
 
 // Start the UDP DNS server
@@ -31,31 +36,66 @@ func (server *UDPServer) Start() {
 		log.Fatal(err)
 	}
 	server.conn = conn
-	server.run()
+	server.eventQueue = make(chan *Request, 1000)
+	server.shutdown = make(chan struct{})
+
+	server.wg.Add(2)
+	go server.dispatchRequests()
+	go server.processRequests()
 }
 
-func (server *UDPServer) run() {
-	if server.Running {
-		return
-	}
-	server.Running = true
-	for {
-		if !server.Running {
-			break
-		}
-		//handle request
-		clientAddr, header, questions, err := server.HandleRequest()
-		if err != nil {
-			continue
-		}
-		// handle response
-		err = server.HandleResponse(clientAddr, header, questions)
-		if err != nil {
-			continue
-		}
-	}
+// Stop the UDP DNS server gracefully
+func (server *UDPServer) Stop() {
+	close(server.shutdown)
 	if err := server.conn.Close(); err != nil {
-		log.Println("close udp server:", err)
+		log.Println("Error closing UDP server:", err)
+	}
+	close(server.eventQueue)
+	server.wg.Wait()
+}
+
+func (server *UDPServer) dispatchRequests() {
+	defer server.wg.Done()
+	for {
+		select {
+		case <-server.shutdown:
+			return
+		default:
+			req, err := server.HandleRequest()
+			if err != nil {
+				continue
+			}
+			select {
+			case server.eventQueue <- req:
+			case <-time.After(500 * time.Millisecond):
+				log.Println("event queue is full")
+			}
+		}
+	}
+}
+
+func (server *UDPServer) processRequests() {
+	defer server.wg.Done()
+	for {
+		select {
+		case <-server.shutdown:
+			return
+		case req, ok := <-server.eventQueue:
+			if !ok {
+				return
+			}
+			select {
+			case <-server.shutdown:
+				return
+			case server.Workers <- struct{}{}:
+				go func(req *Request) {
+					defer func() { <-server.Workers }()
+					if err := server.HandleResponse(req); err != nil {
+						log.Println("handle response:", err)
+					}
+				}(req)
+			}
+		}
 	}
 }
 
@@ -73,6 +113,7 @@ func (server *UDPServer) forward(query []byte) (response []byte, err error) {
 			log.Println("close connection to forwarding server:", err)
 		}
 	}(conn)
+
 	response = make([]byte, config.PkgLimitRFC1035)
 	_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	if _, err = conn.Write(query); err != nil {
