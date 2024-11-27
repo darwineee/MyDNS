@@ -27,13 +27,13 @@ func (m *Message) Size() int {
 }
 
 // ParseMessage parses a complete DNS message
-func ParseMessage(buf []byte) (*Header, []*Question, error) {
+func ParseMessage(buf []byte, bufLimit int) (*Header, []*Question, error) {
 	header, remaining, err := parseHeader(buf)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	questions, err := parseQuestions(remaining, header.QuestionCount)
+	questions, err := parseQuestions(remaining, bufLimit, header.QuestionCount)
 	if err != nil {
 		return header, nil, err
 	}

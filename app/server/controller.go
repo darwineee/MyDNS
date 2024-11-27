@@ -1,7 +1,6 @@
 package server
 
 import (
-	"com.sentry.dev/app/config"
 	"com.sentry.dev/app/dns"
 	"fmt"
 	"net"
@@ -13,13 +12,13 @@ func (server *UDPServer) HandleRequest() (
 	request *Request,
 	err error,
 ) {
-	buf := make([]byte, config.PkgLimitRFC1035)
+	buf := make([]byte, server.Config.UDP.PkgLimitRFC1035)
 	_, clientAddr, err := server.conn.ReadFromUDP(buf)
 	if err != nil {
 		fmt.Println(err)
 		return nil, err
 	}
-	header, questions, err := dns.ParseMessage(buf)
+	header, questions, err := dns.ParseMessage(buf, server.Config.UDP.PkgLimitRFC1035)
 	if err != nil {
 		fmt.Println(err)
 		return nil, err
@@ -61,7 +60,7 @@ func (server *UDPServer) handleRecursiveResponse(
 	respHeader dns.Header,
 	questions []*dns.Question,
 ) (err error) {
-	result := make([]byte, config.PkgLimitRFC1035)
+	result := make([]byte, server.Config.UDP.PkgLimitRFC1035)
 	remaining := result[12:]
 	reqHeader.QuestionCount = 1
 	var ansCount uint16 = 0

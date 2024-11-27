@@ -1,0 +1,17 @@
+memcached:
+  servers: "127.0.0.1:11211"
+  username: "admin"
+  password: "admin"
+
+udp:
+  pkg_limit_rfc1035: 512
+  pkg_limit_edns0: 4096
+
+server:
+  port: 2053
+  protocol: "udp"
+#  workers: 4
+  forward_host: "1.1.1.1:53"
+  forwarding_timeout_milliseconds: 1000
+  event_queue_size: 1000
+  event_queue_timeout_milliseconds: 500

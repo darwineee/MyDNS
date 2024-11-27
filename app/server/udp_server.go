@@ -16,11 +16,11 @@ const (
 )
 
 type UDPServer struct {
-	RecursiveHost *string
-	Workers       chan struct{}
+	Config *config.Config
 
 	conn       *net.UDPConn
 	eventQueue chan *Request
+	workers    chan struct{}
 	shutdown   chan struct{}
 	wg         sync.WaitGroup
 }
@@ -37,6 +37,7 @@ func (server *UDPServer) Start() {
 	}
 	server.conn = conn
 	server.eventQueue = make(chan *Request, 1000)
+	server.workers = make(chan struct{}, server.Config.Sever.Workers)
 	server.shutdown = make(chan struct{})
 
 	server.wg.Add(2)
@@ -87,9 +88,9 @@ func (server *UDPServer) processRequests() {
 			select {
 			case <-server.shutdown:
 				return
-			case server.Workers <- struct{}{}:
+			case server.workers <- struct{}{}:
 				go func(req *Request) {
-					defer func() { <-server.Workers }()
+					defer func() { <-server.workers }()
 					if err := server.HandleResponse(req); err != nil {
 						log.Println("handle response:", err)
 					}
@@ -105,7 +106,7 @@ func (server *UDPServer) lookUp(questions []*dns.Question) (answer []*dns.Answer
 
 func (server *UDPServer) forward(query []byte) (response []byte, err error) {
 	var conn net.Conn
-	if conn, err = net.Dial(DefaultProtocol, *server.RecursiveHost); err != nil {
+	if conn, err = net.Dial(DefaultProtocol, server.Config.Sever.ForwardHost); err != nil {
 		return nil, err
 	}
 	defer func(conn net.Conn) {
@@ -114,7 +115,7 @@ func (server *UDPServer) forward(query []byte) (response []byte, err error) {
 		}
 	}(conn)
 
-	response = make([]byte, config.PkgLimitRFC1035)
+	response = make([]byte, server.Config.UDP.PkgLimitRFC1035)
 	_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	if _, err = conn.Write(query); err != nil {
 		return nil, err

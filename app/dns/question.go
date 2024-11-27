@@ -1,7 +1,6 @@
 package dns
 
 import (
-	"com.sentry.dev/app/config"
 	"com.sentry.dev/app/dns/type"
 	"encoding/binary"
 	"errors"
@@ -141,7 +140,7 @@ func parseDomainName(origBuf []byte, startBuf []byte) (string, []byte, error) {
 	}
 }
 
-func parseQuestions(buf []byte, count uint16) ([]*Question, error) {
+func parseQuestions(buf []byte, bufLimit int, count uint16) ([]*Question, error) {
 	questions := make([]*Question, 0, count)
 	currentBuf := buf
 
@@ -149,7 +148,7 @@ func parseQuestions(buf []byte, count uint16) ([]*Question, error) {
 		if len(currentBuf) == 0 {
 			return nil, errors.New("buffer exhausted before parsing all questions")
 		}
-		if len(currentBuf) >= config.PkgLimitRFC1035 {
+		if len(currentBuf) >= bufLimit {
 			return nil, errors.New("buffer exceeds UDP packet limit")
 		}
 

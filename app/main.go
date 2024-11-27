@@ -2,23 +2,24 @@ package main
 
 import (
 	"bufio"
+	"com.sentry.dev/app/config"
 	"com.sentry.dev/app/server"
-	"flag"
+	"com.sentry.dev/app/utils"
 	"fmt"
 	"os"
-	"runtime"
 )
 
 func main() {
-	resolver := flag.String("resolver", "1.1.1.1:53", "Host is used to lookup addresses")
-	numWorkers := flag.Int("workers", runtime.NumCPU()*2, "Number of workers")
-	flag.Parse()
+	appConfig := config.Load()
+
 	udpServer := server.UDPServer{
-		RecursiveHost: resolver,
-		Workers:       make(chan struct{}, *numWorkers),
+		Config: appConfig,
 	}
 
+	utils.PrintBanner()
 	go udpServer.Start()
+	fmt.Println("Server started successfully!")
+	utils.PrintSeparator()
 
 	commandChan := make(chan string)
 	go func() {
@@ -31,7 +32,6 @@ func main() {
 	for {
 		select {
 		case cmd := <-commandChan:
-			fmt.Println("--------------------------------")
 			switch cmd {
 			case "stop":
 				fmt.Println("Stopping server...")
@@ -39,8 +39,9 @@ func main() {
 				fmt.Println("Server stopped gracefully")
 				return
 			default:
-				fmt.Println("Unknown command:", cmd)
+				fmt.Println("Unknown command ", cmd)
 			}
+			utils.PrintSeparator()
 		}
 	}
 }
