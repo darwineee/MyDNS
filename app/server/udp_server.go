@@ -2,64 +2,87 @@ package server
 
 import (
 	"com.sentry.dev/app/config"
-	"com.sentry.dev/app/dns"
-	"errors"
+	"com.sentry.dev/app/utils"
+	"context"
+	"github.com/redis/go-redis/v9"
 	"log"
 	"net"
 	"sync"
 	"time"
 )
 
-const (
-	DefaultPort     = 2053
-	DefaultProtocol = "udp"
-)
-
 type UDPServer struct {
-	Config *config.Config
+	Config     *config.Config
+	Context    context.Context
+	CancelFunc context.CancelFunc
 
-	conn       *net.UDPConn
-	eventQueue chan *Request
-	workers    chan struct{}
-	shutdown   chan struct{}
-	wg         sync.WaitGroup
+	conn        *net.UDPConn
+	cache       *redis.Client
+	eventQueue  chan *Request
+	workers     chan struct{}
+	eventLoopGr sync.WaitGroup
 }
 
 // Start the UDP DNS server
 func (server *UDPServer) Start() {
-	addr := &net.UDPAddr{
-		Port: DefaultPort,
-		IP:   net.IPv4zero,
-	}
-	conn, err := net.ListenUDP(DefaultProtocol, addr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	server.conn = conn
-	server.eventQueue = make(chan *Request, 1000)
-	server.workers = make(chan struct{}, server.Config.Sever.Workers)
-	server.shutdown = make(chan struct{})
+	server.configConnection()
+	server.configRedis()
 
-	server.wg.Add(2)
+	server.eventQueue = make(chan *Request, 1000)
+	server.workers = make(chan struct{}, server.Config.Server.Workers)
+
+	server.eventLoopGr.Add(2)
 	go server.dispatchRequests()
 	go server.processRequests()
 }
 
+func (server *UDPServer) configConnection() {
+	addr := &net.UDPAddr{
+		Port: server.Config.Server.Port,
+		IP:   net.IPv4zero,
+	}
+	conn, err := net.ListenUDP(server.Config.Server.Protocol, addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	server.conn = conn
+}
+
+func (server *UDPServer) configRedis() {
+	rHost := server.Config.Redis.Host
+	rPass := server.Config.Redis.Password
+	rDB := server.Config.Redis.DB
+	server.cache = redis.NewClient(&redis.Options{
+		Addr:     rHost,
+		Password: rPass,
+		DB:       rDB,
+	})
+
+	blackList := config.GetBlackList()
+	server.cache.SAdd(server.Context, utils.BlackList, blackList)
+
+	knownHosts := config.GetKnownHosts()
+	server.cache.HSet(server.Context, utils.KnownHost, knownHosts)
+}
+
 // Stop the UDP DNS server gracefully
 func (server *UDPServer) Stop() {
-	close(server.shutdown)
+	server.CancelFunc()
 	if err := server.conn.Close(); err != nil {
 		log.Println("Error closing UDP server:", err)
 	}
 	close(server.eventQueue)
-	server.wg.Wait()
+	if err := server.cache.Close(); err != nil {
+		log.Println("Error closing memcached client:", err)
+	}
+	server.eventLoopGr.Wait()
 }
 
 func (server *UDPServer) dispatchRequests() {
-	defer server.wg.Done()
+	defer server.eventLoopGr.Done()
 	for {
 		select {
-		case <-server.shutdown:
+		case <-server.Context.Done():
 			return
 		default:
 			req, err := server.HandleRequest()
@@ -76,18 +99,16 @@ func (server *UDPServer) dispatchRequests() {
 }
 
 func (server *UDPServer) processRequests() {
-	defer server.wg.Done()
+	defer server.eventLoopGr.Done()
 	for {
 		select {
-		case <-server.shutdown:
+		case <-server.Context.Done():
 			return
 		case req, ok := <-server.eventQueue:
 			if !ok {
 				return
 			}
 			select {
-			case <-server.shutdown:
-				return
 			case server.workers <- struct{}{}:
 				go func(req *Request) {
 					defer func() { <-server.workers }()
@@ -100,29 +121,12 @@ func (server *UDPServer) processRequests() {
 	}
 }
 
-func (server *UDPServer) lookUp(questions []*dns.Question) (answer []*dns.Answer, err error) {
-	return nil, errors.New("feature not implemented yet")
+func (server *UDPServer) lookUp(hostName string) (ip string, err error) {
+	ip, err = server.cache.HGet(server.Context, utils.KnownHost, hostName).Result()
+	return
 }
 
-func (server *UDPServer) forward(query []byte) (response []byte, err error) {
-	var conn net.Conn
-	if conn, err = net.Dial(DefaultProtocol, server.Config.Sever.ForwardHost); err != nil {
-		return nil, err
-	}
-	defer func(conn net.Conn) {
-		if err = conn.Close(); err != nil {
-			log.Println("close connection to forwarding server:", err)
-		}
-	}(conn)
-
-	response = make([]byte, server.Config.UDP.PkgLimitRFC1035)
-	_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
-	if _, err = conn.Write(query); err != nil {
-		return nil, err
-	}
-	var bytesRead int
-	if bytesRead, err = conn.Read(response); err != nil {
-		return nil, err
-	}
-	return response[:bytesRead], nil
+func (server *UDPServer) isBlackListed(hostName string) (yes bool, err error) {
+	yes, err = server.cache.SIsMember(server.Context, utils.BlackList, hostName).Result()
+	return
 }

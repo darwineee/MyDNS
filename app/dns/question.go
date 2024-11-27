@@ -8,14 +8,14 @@ import (
 
 // Question represents a DNS question section
 type Question struct {
-	Name     *NameAddr
+	Name     *Addr
 	Type     _type.RecordType
 	Class    _type.RecordClass
 	calcSize int
 }
 
 func parseSingleQuestion(origBuf []byte, startBuf []byte) (*Question, []byte, error) {
-	name := &NameAddr{}
+	name := &Addr{}
 	currentBuf := startBuf
 
 	// Parse domain name

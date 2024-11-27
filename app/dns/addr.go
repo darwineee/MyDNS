@@ -9,10 +9,6 @@ type Addr struct {
 	String  string
 }
 
-type NameAddr = Addr
-
-type IPAddr = Addr
-
 // Size in byte
 func (addr *Addr) Size() int {
 	return len(addr.Encoded)

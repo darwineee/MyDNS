@@ -3,6 +3,7 @@ OUTPUT_DIR := bin
 
 all: clean build run
 
+.PHONY: build
 build:
 	@echo "Building $(APP_NAME)..."
 	mkdir -p $(OUTPUT_DIR)

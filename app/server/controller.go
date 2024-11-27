@@ -2,6 +2,7 @@ package server
 
 import (
 	"com.sentry.dev/app/dns"
+	_type "com.sentry.dev/app/dns/type"
 	"fmt"
 	"net"
 	"sync"
@@ -34,140 +35,89 @@ func (server *UDPServer) HandleRequest() (
 func (server *UDPServer) HandleResponse(
 	req *Request,
 ) (err error) {
-	var answers []*dns.Answer
-	if req.Header.RecursionDesired {
-		req.Header.RecursionAvailable = true
-		answers, err = server.lookUp(req.Questions)
-		if err != nil {
-			err = server.handleRecursiveResponse(req.ClientAddr, req.Header, *req.Header, req.Questions)
-		} else {
-			err = server.handleNormalResponse(req.ClientAddr, req.Header, req.Questions, answers)
-		}
-	} else {
-		err = server.handleNormalResponse(req.ClientAddr, req.Header, req.Questions, answers)
-	}
-
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	return nil
-}
-
-func (server *UDPServer) handleRecursiveResponse(
-	clientAddr *net.UDPAddr,
-	reqHeader *dns.Header,
-	respHeader dns.Header,
-	questions []*dns.Question,
-) (err error) {
 	result := make([]byte, server.Config.UDP.PkgLimitRFC1035)
-	remaining := result[12:]
-	reqHeader.QuestionCount = 1
-	var ansCount uint16 = 0
-
-	for _, question := range questions {
-		if remaining, err = question.WriteTo(remaining); err != nil {
+	var pos uint16 = 12
+	remaining := result[pos:]
+	pointerMap := make(map[int]uint16)
+	for i, question := range req.Questions {
+		remaining, err = question.WriteTo(remaining)
+		if err != nil {
 			return err
 		}
+		pointerMap[i] = pos
+		pos += uint16(question.Size())
 	}
-	var wg sync.WaitGroup
-	answers := make([][]byte, len(questions))
-	for i, question := range questions {
-		wg.Add(1)
+
+	var lookUpWg sync.WaitGroup
+	answers := make([]net.IP, len(req.Questions))
+	for i, question := range req.Questions {
+		lookUpWg.Add(1)
 		go func(question *dns.Question, order int) {
-			defer wg.Done()
-			var query []byte
-			if query, err = buildQuery(reqHeader, question); err != nil {
+			defer lookUpWg.Done()
+			yes, _ := server.isBlackListed(question.Name.String)
+			if yes {
 				return
 			}
-			var response []byte
-			if response, err = server.forward(query); err == nil && len(response) > len(query) {
-				answer := response[len(query):]
-				answers[order] = answer
+			var addr []byte
+			if ip, err := server.lookUp(question.Name.String); err == nil {
+				addr = net.ParseIP(ip).To4()
+				if addr != nil {
+					answers[order] = addr
+					return
+				}
+			}
+			if ips, err := net.LookupIP(question.Name.String); err == nil {
+				for _, ip := range ips {
+					addr = ip.To4()
+					if addr != nil {
+						answers[order] = addr
+						return
+					}
+				}
 			}
 		}(question, i)
 	}
-	wg.Wait()
-	for _, answer := range answers {
+	lookUpWg.Wait()
+
+	var ansCount uint16 = 0
+	for i, answer := range answers {
 		if answer != nil {
-			copy(remaining, answer)
-			remaining = remaining[len(answer):]
+			pointer := _type.ToPointer(pointerMap[i])
+			ansStruct := dns.Answer{
+				Pointer:  pointer,
+				Type:     req.Questions[i].Type,
+				Class:    req.Questions[i].Class,
+				TTL:      server.Config.Server.CacheTTLSec,
+				RDLength: uint16(len(answer)),
+				RData:    answer,
+			}
+			if remaining, err = ansStruct.WriteTo(remaining); err != nil {
+				return err
+			}
 			ansCount++
 		}
 	}
 
-	respHeader.QueryResponse = true
-	if respHeader.OperationCode != 0 {
-		respHeader.ResponseCode = 4
+	req.Header.RecursionAvailable = true
+	req.Header.QueryResponse = true
+	if req.Header.OperationCode != 0 {
+		req.Header.ResponseCode = 4
 	}
-	respHeader.AnswerCount = ansCount
+	req.Header.AnswerCount = ansCount
 
-	if ansCount == 0 && server.handleNoAnswer(clientAddr, &respHeader) != nil {
+	if ansCount == 0 && server.handleNoAnswer(req.ClientAddr, req.Header) != nil {
 		return err
 	}
 
-	if _, err = respHeader.WriteTo(result); err != nil {
+	if _, err = req.Header.WriteTo(result); err != nil {
 		return err
 	}
 
 	size := len(result) - len(remaining)
-	if _, err = server.conn.WriteToUDP(result[:size], clientAddr); err != nil {
+	if _, err = server.conn.WriteToUDP(result[:size], req.ClientAddr); err != nil {
 		return err
 	}
 
-	return nil
-}
-
-func buildQuery(
-	reqHeader *dns.Header,
-	question *dns.Question,
-) ([]byte, error) {
-	size := reqHeader.Size() + question.Size()
-	res := make([]byte, size)
-
-	remaining, err := reqHeader.WriteTo(res)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = question.WriteTo(remaining)
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
-}
-
-func (server *UDPServer) handleNormalResponse(
-	clientAddr *net.UDPAddr,
-	respHeader *dns.Header,
-	questions []*dns.Question,
-	answers []*dns.Answer,
-) (err error) {
-	ansCount := uint16(len(answers))
-
-	respHeader.QueryResponse = true
-	if respHeader.OperationCode != 0 {
-		respHeader.ResponseCode = 4
-	}
-	respHeader.AnswerCount = ansCount
-
-	if ansCount == 0 && server.handleNoAnswer(clientAddr, respHeader) != nil {
-		return err
-	}
-
-	message := &dns.Message{
-		Header:    respHeader,
-		Questions: questions,
-		Answers:   answers,
-	}
-	buf := make([]byte, message.Size())
-	if _, err = message.WriteTo(buf); err != nil {
-		return err
-	}
-	if _, err = server.conn.WriteToUDP(buf, clientAddr); err != nil {
-		return err
-	}
 	return nil
 }
 

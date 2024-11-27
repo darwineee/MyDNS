@@ -15,3 +15,7 @@ func ToLabel(val byte) Label {
 	}
 	return LEN
 }
+
+func ToPointer(val uint16) uint16 {
+	return val | 0xC000 // 0xC000 = 1100 0000 0000 0000
+}
