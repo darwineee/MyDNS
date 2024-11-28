@@ -15,7 +15,7 @@ func GetKnownHosts() map[string]string {
 		return knownHosts
 	}
 	defer func(file *os.File) {
-		err := file.Close()
+		err = file.Close()
 		if err != nil {
 			fmt.Println("Error closing known_hosts file:", err)
 		}
@@ -24,6 +24,9 @@ func GetKnownHosts() map[string]string {
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
 		parts := strings.Fields(line)
 		if len(parts) != 2 {
 			fmt.Println("Invalid known_hosts file format")

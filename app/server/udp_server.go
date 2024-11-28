@@ -28,7 +28,7 @@ func (server *UDPServer) Start() {
 	server.configConnection()
 	server.configRedis()
 
-	server.eventQueue = make(chan *Request, 1000)
+	server.eventQueue = make(chan *Request, server.Config.Server.EventQueueSize)
 	server.workers = make(chan struct{}, server.Config.Server.Workers)
 
 	server.eventLoopGr.Add(2)
@@ -91,7 +91,7 @@ func (server *UDPServer) dispatchRequests() {
 			}
 			select {
 			case server.eventQueue <- req:
-			case <-time.After(500 * time.Millisecond):
+			case <-time.After(server.Config.Server.EventQueueTimeoutDuration()):
 				log.Println("event queue is full")
 			}
 		}

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strings"
 )
 
 func GetBlackList() []string {
@@ -22,6 +23,10 @@ func GetBlackList() []string {
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
 		blackList = append(blackList, scanner.Text())
 	}
 	return blackList

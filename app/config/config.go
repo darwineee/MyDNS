@@ -5,6 +5,7 @@ import (
 	"gopkg.in/yaml.v3"
 	"os"
 	"runtime"
+	"time"
 )
 
 type RedisConfig struct {
@@ -25,6 +26,14 @@ type ServerConfig struct {
 	EventQueueSize    int    `yaml:"event_queue_size"`
 	EventQueueTimeout int    `yaml:"event_queue_timeout_milliseconds"`
 	CacheTTLSec       uint32 `yaml:"cache_ttl_seconds"`
+}
+
+func (c *ServerConfig) CacheTTLDuration() time.Duration {
+	return time.Duration(c.CacheTTLSec) * time.Second
+}
+
+func (c *ServerConfig) EventQueueTimeoutDuration() time.Duration {
+	return time.Duration(c.EventQueueTimeout) * time.Millisecond
 }
 
 type Config struct {
