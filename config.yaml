@@ -15,3 +15,5 @@ server:
   event_queue_size: 1000
   event_queue_timeout_milliseconds: 500
   cache_ttl_seconds: 300
+  blacklist_file_path: "blacklist-example"
+  known_hosts_file_path: "known_hosts-example"

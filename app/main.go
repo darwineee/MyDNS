@@ -12,6 +12,8 @@ import (
 	"syscall"
 )
 
+var Version string
+
 func main() {
 	appConfig := config.Load()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -24,6 +26,7 @@ func main() {
 
 	utils.PrintBanner()
 	udpServer.Start()
+	fmt.Println("Binary version: ", Version)
 	fmt.Println("Server started successfully!")
 	utils.PrintSeparator()
 

@@ -58,10 +58,10 @@ func (server *UDPServer) configRedis() {
 		DB:       rDB,
 	})
 
-	blackList := config.GetBlackList()
+	blackList := config.GetBlackList(server.Config.Server.BlacklistFilePath)
 	server.cache.SAdd(server.Context, utils.BlackList, blackList)
 
-	knownHosts := config.GetKnownHosts()
+	knownHosts := config.GetKnownHosts(server.Config.Server.KnownHostsFilePath)
 	server.cache.HSet(server.Context, utils.KnownHost, knownHosts)
 }
 

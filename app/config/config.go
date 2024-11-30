@@ -20,12 +20,14 @@ type UDPConfig struct {
 }
 
 type ServerConfig struct {
-	Port              int    `yaml:"port"`
-	Protocol          string `yaml:"protocol"`
-	Workers           int    `yaml:"workers"`
-	EventQueueSize    int    `yaml:"event_queue_size"`
-	EventQueueTimeout int    `yaml:"event_queue_timeout_milliseconds"`
-	CacheTTLSec       uint32 `yaml:"cache_ttl_seconds"`
+	Port               int    `yaml:"port"`
+	Protocol           string `yaml:"protocol"`
+	Workers            int    `yaml:"workers"`
+	EventQueueSize     int    `yaml:"event_queue_size"`
+	EventQueueTimeout  int    `yaml:"event_queue_timeout_milliseconds"`
+	CacheTTLSec        uint32 `yaml:"cache_ttl_seconds"`
+	BlacklistFilePath  string `yaml:"blacklist_file_path"`
+	KnownHostsFilePath string `yaml:"known_hosts_file_path"`
 }
 
 func (c *ServerConfig) CacheTTLDuration() time.Duration {
@@ -54,12 +56,14 @@ func Load() *Config {
 			PkgLimitEDNS0:   4096,
 		},
 		Server: ServerConfig{
-			Port:              2053,
-			Protocol:          "udp",
-			Workers:           runtime.NumCPU() * 2,
-			EventQueueSize:    1000,
-			EventQueueTimeout: 500,
-			CacheTTLSec:       300,
+			Port:               2053,
+			Protocol:           "udp",
+			Workers:            runtime.NumCPU() * 2,
+			EventQueueSize:     1000,
+			EventQueueTimeout:  500,
+			CacheTTLSec:        300,
+			BlacklistFilePath:  "blacklist",
+			KnownHostsFilePath: "known_hosts",
 		},
 	}
 	yamlFile, err := os.ReadFile("config.yaml")

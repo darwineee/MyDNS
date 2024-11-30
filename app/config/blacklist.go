@@ -7,17 +7,17 @@ import (
 	"strings"
 )
 
-func GetBlackList() []string {
+func GetBlackList(filePath string) []string {
 	var blackList []string
-	file, err := os.Open("blacklist")
+	file, err := os.Open(filePath)
 	if err != nil {
-		fmt.Println("Error opening known_hosts file:", err)
+		fmt.Println(err)
 		return blackList
 	}
 	defer func(file *os.File) {
 		err = file.Close()
 		if err != nil {
-			fmt.Println("Error closing known_hosts file:", err)
+			fmt.Println(err)
 		}
 	}(file)
 

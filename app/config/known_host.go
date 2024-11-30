@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-func GetKnownHosts() map[string]string {
+func GetKnownHosts(filePath string) map[string]string {
 	knownHosts := make(map[string]string)
-	file, err := os.Open("known_hosts")
+	file, err := os.Open(filePath)
 	if err != nil {
 		fmt.Println("Error opening known_hosts file:", err)
 		return knownHosts
